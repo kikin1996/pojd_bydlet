@@ -50,6 +50,9 @@ next-env.d.ts
 # local credential notes — never commit
 credentials.md
 
+# Supabase CLI local cache/state
+/supabase/.temp
+
 # auto-installed generic tool reference docs (from `prisma init`)
 /.claude/skills
 /.agents/skills

@@ -6,7 +6,7 @@ Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa
 
 - Next.js 16 (App Router, TypeScript, Tailwind)
 - Auth.js (Credentials provider, JWT session)
-- Prisma + PostgreSQL ([InsForge](https://insforge.dev), Neon nebo Supabase fungují stejně dobře)
+- Prisma + PostgreSQL ([Supabase](https://supabase.com); Neon nebo InsForge fungují stejně dobře)
 - LiveKit (WebRTC video/audio místnosti, připraveno na budoucí AI agenty)
 
 ## Nastavení
@@ -18,7 +18,7 @@ Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa
    ```
 
 2. Zkopíruj `.env.example` do `.env` a vyplň:
-   - `DATABASE_URL` — connection string k PostgreSQL databázi (např. z [InsForge](https://insforge.dev), Neon nebo Supabase)
+   - `DATABASE_URL` — connection string k PostgreSQL databázi (např. z [Supabase](https://supabase.com), Neon nebo InsForge). U Supabase použij **pooler** connection string (`aws-0-<region>.pooler.supabase.com`), přímé připojení (`db.<ref>.supabase.co`) vyžaduje IPv6 a z běžné sítě/CI nemusí být dostupné.
    - `AUTH_SECRET` — vygeneruj: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
    - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — přihlašovací údaje prvního admina
    - `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL`, `NEXT_PUBLIC_LIVEKIT_URL` — zdarma na [cloud.livekit.io](https://cloud.livekit.io) (bez nich se přenos obrazu/zvuku nepřipojí, zbytek appky funguje)
