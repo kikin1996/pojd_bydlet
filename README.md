@@ -6,7 +6,7 @@ Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa
 
 - Next.js 16 (App Router, TypeScript, Tailwind)
 - Auth.js (Credentials provider, JWT session)
-- Prisma + SQLite (lokální vývoj)
+- Prisma + PostgreSQL ([InsForge](https://insforge.dev), Neon nebo Supabase fungují stejně dobře)
 - LiveKit (WebRTC video/audio místnosti, připraveno na budoucí AI agenty)
 
 ## Nastavení
@@ -18,6 +18,7 @@ Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa
    ```
 
 2. Zkopíruj `.env.example` do `.env` a vyplň:
+   - `DATABASE_URL` — connection string k PostgreSQL databázi (např. z [InsForge](https://insforge.dev), Neon nebo Supabase)
    - `AUTH_SECRET` — vygeneruj: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
    - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — přihlašovací údaje prvního admina
    - `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL`, `NEXT_PUBLIC_LIVEKIT_URL` — zdarma na [cloud.livekit.io](https://cloud.livekit.io) (bez nich se přenos obrazu/zvuku nepřipojí, zbytek appky funguje)
@@ -42,6 +43,10 @@ Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa
 3. Otevři párovací odkaz (`/kiosk/<kód>`) na libovolném zařízení s kamerou a mikrofonem (klidně jiná záložka/telefon ve stejné síti) a povol přístup ke kameře/mikrofonu — to simuluje zařízení v bytě.
 4. V detailu nemovitosti klikni na „Zobrazit živý přenos“ — uvidíš obraz a uslyšíš zvuk z kiosk zařízení, můžeš zapnout mikrofon a mluvit zpět.
 5. Stav zařízení (online/offline) se v dashboardu aktualizuje podle heartbeatu z kiosk stránky.
+
+## Nasazení (Vercel)
+
+`prisma generate` se spouští automaticky přes `postinstall` skript, takže build na Vercelu funguje bez dalšího nastavení. Je ale potřeba v nastavení projektu na Vercelu (Settings → Environment Variables) vyplnit stejné proměnné jako v `.env`: `DATABASE_URL`, `AUTH_SECRET`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL`, `NEXT_PUBLIC_LIVEKIT_URL`. Databázová migrace (`npx prisma migrate deploy`) a seed admina se spouští ručně z lokálního stroje proti produkční `DATABASE_URL` — nejsou součástí Vercel buildu.
 
 ## Struktura
 
