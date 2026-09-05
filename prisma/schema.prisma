@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(ADMIN)
+  createdAt    DateTime @default(now())
+
+  properties Property[]
+}
+
+enum Role {
+  ADMIN
+}
+
+model Property {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  note      String?
+  createdAt DateTime @default(now())
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  device Device?
+}
+
+model Device {
+  id          String    @id @default(cuid())
+  pairingCode String    @unique
+  lastSeenAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  propertyId String   @unique
+  property   Property @relation(fields: [propertyId], references: [id])
+}
