@@ -84,7 +84,10 @@ export function ViewerRoom({ propertyId }: { propertyId: string }) {
     const room = roomRef.current;
     if (!room) return;
     const next = !micEnabled;
-    await room.localParticipant.setMicrophoneEnabled(next);
+    await room.localParticipant.setMicrophoneEnabled(
+      next,
+      next ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : undefined,
+    );
     setMicEnabled(next);
   }
 

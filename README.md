@@ -1,6 +1,6 @@
 # Pojď bydlet
 
-Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa nemovitostí a živý přenos obrazu+zvuku z bytu (kamera, mikrofon, reproduktor) do prohlížeče makléře. V další fázi se do stejné místnosti připojí AI hlasový agent, který povede prohlídku sám.
+Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa nemovitostí a živý přenos obrazu+zvuku z bytu (kamera, mikrofon, reproduktor) do prohlížeče makléře. Do stejné LiveKit místnosti se navíc připojuje AI hlasový agent (`agent/`), který slyší zájemce, odpovídá na dotazy o bytě a ukládá zjištěné poptávky.
 
 ## Tech stack
 
@@ -48,11 +48,25 @@ Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa
 
 `prisma generate` se spouští automaticky přes `postinstall` skript, takže build na Vercelu funguje bez dalšího nastavení. Je ale potřeba v nastavení projektu na Vercelu (Settings → Environment Variables) vyplnit stejné proměnné jako v `.env`: `DATABASE_URL`, `AUTH_SECRET`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL`, `NEXT_PUBLIC_LIVEKIT_URL`. Databázová migrace (`npx prisma migrate deploy`) a seed admina se spouští ručně z lokálního stroje proti produkční `DATABASE_URL` — nejsou součástí Vercel buildu.
 
+## AI hlasový agent (`agent/`)
+
+Samostatný Node.js projekt (jiné závislosti/runtime než hlavní appka — [LiveKit Agents](https://docs.livekit.io/agents/) + OpenAI Realtime API). Když se bytové zařízení připojí ke kiosk stránce, appka ho přes `AgentDispatchClient` výslovně pozve do stejné LiveKit místnosti. Agent zná konkrétní nemovitost (název, adresu, poznámku z `Property.note`) a umí zjištěné poptávky (rozpočet, termín nastěhování, kontakt) ukládat do tabulky `Inquiry`.
+
+1. `cd agent && npm install`
+2. Zkopíruj `agent/.env.example` do `agent/.env` a vyplň `DATABASE_URL` (stejná jako v kořenovém `.env`), `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`/`LIVEKIT_URL` (stejné jako v kořenovém `.env`) a `OPENAI_API_KEY` (z [platform.openai.com](https://platform.openai.com), vyžaduje nastavený billing — Realtime API není zdarma)
+3. `npm run dev` — worker se zaregistruje k LiveKit projektu a čeká na joby
+
+Poznámky:
+- Zatím jen zvuk (AI slyší a mluví) — vidění videa je plánované jako další krok.
+- Worker běží zatím jen lokálně; produkční hosting (LiveKit Cloud agent hosting vs. Railway/Fly.io) je samostatné rozhodnutí do budoucna.
+- Testuješ-li mikrofon i reproduktor na stejném zařízení, používej sluchátka — jinak hrozí zpětnovazební smyčka (AI slyší sama sebe).
+
 ## Struktura
 
 - `src/app/dashboard` — přehled a správa nemovitostí (chráněno přihlášením)
 - `src/app/property/[id]/view` — viewer stránka makléře (živý přenos)
 - `src/app/kiosk/[pairingCode]` — stránka pro zařízení v bytě (kamera+mikrofon)
-- `src/app/api/livekit/token` — generování LiveKit access tokenů
+- `src/app/api/livekit/token` — generování LiveKit access tokenů + dispatch AI agenta
 - `src/app/api/devices/heartbeat` — aktualizace online/offline stavu zařízení
-- `prisma/schema.prisma` — datový model (User, Property, Device)
+- `prisma/schema.prisma` — datový model (User, Property, Device, Inquiry)
+- `agent/` — AI hlasový agent (LiveKit Agents + OpenAI Realtime API)

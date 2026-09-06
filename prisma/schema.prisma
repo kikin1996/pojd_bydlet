@@ -32,7 +32,8 @@ model Property {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id])
 
-  device Device?
+  device    Device?
+  inquiries Inquiry[]
 }
 
 model Device {
@@ -42,5 +43,19 @@ model Device {
   createdAt   DateTime  @default(now())
 
   propertyId String   @unique
+  property   Property @relation(fields: [propertyId], references: [id])
+}
+
+model Inquiry {
+  id           String   @id @default(cuid())
+  budget       String?
+  moveInDate   String?
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  propertyId String
   property   Property @relation(fields: [propertyId], references: [id])
 }

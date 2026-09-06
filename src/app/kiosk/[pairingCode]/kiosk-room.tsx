@@ -8,14 +8,19 @@ type Status = "connecting" | "connected" | "error";
 export function KioskRoom({ pairingCode }: { pairingCode: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioContainerRef = useRef<HTMLDivElement>(null);
+  const roomRef = useRef<Room | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [propertyName, setPropertyName] = useState<string | null>(null);
   const [propertyAddress, setPropertyAddress] = useState<string | null>(null);
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const room = new Room();
+    roomRef.current = room;
     let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
 
     async function join() {
@@ -47,10 +52,18 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
         }
       });
 
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        setAudioBlocked(!room.canPlaybackAudio);
+      });
+
       try {
         await room.connect(data.url, data.token);
         await room.localParticipant.setCameraEnabled(true);
-        await room.localParticipant.setMicrophoneEnabled(true);
+        await room.localParticipant.setMicrophoneEnabled(true, {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        });
 
         const cameraTrack = room.localParticipant.getTrackPublication(
           Track.Source.Camera,
@@ -59,7 +72,10 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
           cameraTrack.attach(videoRef.current);
         }
 
-        if (!cancelled) setStatus("connected");
+        if (!cancelled) {
+          setStatus("connected");
+          setAudioBlocked(!room.canPlaybackAudio);
+        }
 
         heartbeatInterval = setInterval(() => {
           fetch("/api/devices/heartbeat", {
@@ -87,6 +103,32 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
     };
   }, [pairingCode]);
 
+  async function toggleMic() {
+    const room = roomRef.current;
+    if (!room) return;
+    const next = !micEnabled;
+    await room.localParticipant.setMicrophoneEnabled(
+      next,
+      next ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : undefined,
+    );
+    setMicEnabled(next);
+  }
+
+  async function enableAudio() {
+    const room = roomRef.current;
+    if (!room) return;
+    await room.startAudio();
+    setAudioBlocked(!room.canPlaybackAudio);
+  }
+
+  async function toggleCamera() {
+    const room = roomRef.current;
+    if (!room) return;
+    const next = !cameraEnabled;
+    await room.localParticipant.setCameraEnabled(next);
+    setCameraEnabled(next);
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black px-4 text-white">
       <video
@@ -107,6 +149,39 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
       )}
       {status === "error" && (
         <p className="text-sm text-red-400">{errorMessage}</p>
+      )}
+
+      {status === "connected" && audioBlocked && (
+        <button
+          type="button"
+          onClick={enableAudio}
+          className="rounded-md bg-amber-600 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-700"
+        >
+          Prohlížeč zablokoval zvuk — klikni pro povolení
+        </button>
+      )}
+
+      {status === "connected" && (
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={toggleMic}
+            className={`rounded-md px-4 py-2 text-sm font-medium text-white ${
+              micEnabled ? "bg-gray-800 hover:bg-gray-700" : "bg-red-600 hover:bg-red-700"
+            }`}
+          >
+            {micEnabled ? "Ztlumit mikrofon" : "Zapnout mikrofon"}
+          </button>
+          <button
+            type="button"
+            onClick={toggleCamera}
+            className={`rounded-md px-4 py-2 text-sm font-medium text-white ${
+              cameraEnabled ? "bg-gray-800 hover:bg-gray-700" : "bg-red-600 hover:bg-red-700"
+            }`}
+          >
+            {cameraEnabled ? "Vypnout kameru" : "Zapnout kameru"}
+          </button>
+        </div>
       )}
     </main>
   );
