@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   AccessToken,
-  AgentDispatchClient,
-  RoomServiceClient,
-  ParticipantInfo_State,
+  RoomConfiguration,
+  RoomAgentDispatch,
 } from "livekit-server-sdk";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -11,51 +10,26 @@ import { prisma } from "@/lib/prisma";
 // Must match the agentName the worker registers with in agent/src/index.ts
 export const AI_AGENT_NAME = "pojd-bydlet-assistant";
 
-// ParticipantInfo_Kind.AGENT — not re-exported by livekit-server-sdk, so inlined
-// (see @livekit/protocol's livekit_models_pb.d.ts).
-const AGENT_PARTICIPANT_KIND = 4;
-
 export function roomNameForProperty(propertyId: string) {
   return `property-${propertyId}`;
 }
 
-async function dispatchAgent(roomName: string, propertyId: string) {
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  const wsUrl = process.env.LIVEKIT_URL;
-  if (!apiKey || !apiSecret || !wsUrl) return;
-
-  const httpUrl = wsUrl.replace(/^ws/, "http");
-
-  // Avoid dispatching a duplicate agent (e.g. on a kiosk page reload) while a
-  // previous one is still connected to this room — otherwise multiple AI
-  // participants end up talking over each other. The room doesn't exist yet
-  // on LiveKit's side until a client actually connects, so listParticipants
-  // 404s on the very first join; that just means there's no agent yet.
-  let hasActiveAgent = false;
-  try {
-    const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
-    const participants = await roomService.listParticipants(roomName);
-    hasActiveAgent = participants.some(
-      (p) =>
-        p.kind === AGENT_PARTICIPANT_KIND &&
-        p.state !== ParticipantInfo_State.DISCONNECTED,
-    );
-  } catch (error) {
-    console.error("Failed to list room participants before dispatch:", error);
-  }
-  if (hasActiveAgent) return;
-
-  try {
-    const dispatchClient = new AgentDispatchClient(httpUrl, apiKey, apiSecret);
-    await dispatchClient.createDispatch(roomName, AI_AGENT_NAME, {
-      metadata: JSON.stringify({ propertyId }),
-    });
-  } catch (error) {
-    // Dispatch is best-effort: the kiosk device should still be able to
-    // connect and stream even if the AI agent worker isn't running.
-    console.error("Failed to dispatch AI agent:", error);
-  }
+// Attaching agent dispatch to the room's *creation* (via the token's
+// roomConfig) instead of firing a separate AgentDispatchClient.createDispatch
+// call from our own code sidesteps a race condition: a room is only created
+// once (the first participant to join with that name creates it), so LiveKit
+// only honors this dispatch once too — even if the kiosk page fires the
+// token request twice (React StrictMode in dev, a flaky reconnect, two open
+// tabs), we never end up with two AI agents talking over each other.
+function agentRoomConfig(propertyId: string) {
+  return new RoomConfiguration({
+    agents: [
+      new RoomAgentDispatch({
+        agentName: AI_AGENT_NAME,
+        metadata: JSON.stringify({ propertyId }),
+      }),
+    ],
+  });
 }
 
 export async function POST(request: Request) {
@@ -134,8 +108,7 @@ export async function POST(request: Request) {
     canPublish: true,
     canSubscribe: true,
   });
-
-  await dispatchAgent(roomNameForProperty(device.propertyId), device.propertyId);
+  token.roomConfig = agentRoomConfig(device.propertyId);
 
   return NextResponse.json({
     token: await token.toJwt(),

@@ -56,6 +56,18 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
         setAudioBlocked(!room.canPlaybackAudio);
       });
 
+      room.on(RoomEvent.Disconnected, () => {
+        // Stop pretending we're live — without this, the heartbeat interval
+        // below keeps firing (and the page keeps showing "Připojeno") even
+        // though the actual LiveKit connection is gone, which makes a dead
+        // tab indistinguishable from a working one.
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (!cancelled) {
+          setStatus("error");
+          setErrorMessage("Spojení se přerušilo. Načti stránku znovu.");
+        }
+      });
+
       try {
         await room.connect(data.url, data.token);
         await room.localParticipant.setCameraEnabled(true);

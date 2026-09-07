@@ -3,13 +3,22 @@ import { fileURLToPath } from "node:url";
 import {
   ServerOptions,
   cli,
+  createImageContent,
   defineAgent,
   tool,
   voice,
   type JobContext,
 } from "@livekit/agents";
 import * as openai from "@livekit/agents-plugin-openai";
-import { RoomEvent } from "@livekit/rtc-node";
+import {
+  ParticipantKind,
+  RoomEvent,
+  TrackKind,
+  VideoStream,
+  type RemoteTrack,
+  type Track,
+  type VideoFrame,
+} from "@livekit/rtc-node";
 import { z } from "zod";
 import { loadPropertyContext, prisma } from "./property-context.js";
 
@@ -37,14 +46,46 @@ export default defineAgent({
     const { property, instructions } = await loadPropertyContext(propertyId);
     console.log(`Agent joining room for property "${property.name}" (${property.id})`);
 
-    // Leave once the kiosk device (or anyone else) leaves and no one but the
-    // agent itself remains — otherwise a stale agent from an earlier session
-    // keeps talking alongside a newly dispatched one.
+    // Leave once no human (kiosk device, viewer, ...) is left in the room —
+    // ignoring other agent participants, which would otherwise keep this
+    // count above zero forever if more than one ever ends up in the room.
     ctx.room.on(RoomEvent.ParticipantDisconnected, () => {
-      if (ctx.room.remoteParticipants.size === 0) {
-        ctx.shutdown("room is empty");
+      const hasHumanParticipant = Array.from(
+        ctx.room.remoteParticipants.values(),
+      ).some((p) => p.kind !== ParticipantKind.AGENT);
+      if (!hasHumanParticipant) {
+        ctx.shutdown("room has no human participants left");
       }
     });
+
+    // The Node.js LiveKit Agents SDK doesn't yet wire up `inputOptions.videoEnabled`
+    // to actual frame sampling (unlike the Python SDK), so we do it ourselves:
+    // keep the latest camera frame around and attach it to the chat message
+    // whenever the prospective tenant finishes speaking.
+    let latestFrame: VideoFrame | undefined;
+    const watchedTrackSids = new Set<string>();
+    function watchVideoTrack(track: Track) {
+      if (track.kind !== TrackKind.KIND_VIDEO) return;
+      if (track.sid && watchedTrackSids.has(track.sid)) return;
+      if (track.sid) watchedTrackSids.add(track.sid);
+      console.log(`Watching video track ${track.sid} for frames`);
+      (async () => {
+        for await (const event of new VideoStream(track)) {
+          if (!latestFrame) console.log("Received first video frame from camera");
+          latestFrame = event.frame;
+        }
+      })();
+    }
+
+    // Covers tracks subscribed *after* this point...
+    ctx.room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => watchVideoTrack(track));
+    // ...and the camera track, which auto-subscribes as part of `ctx.connect()`
+    // above and so may already be subscribed by the time we get here.
+    for (const participant of ctx.room.remoteParticipants.values()) {
+      for (const publication of participant.trackPublications.values()) {
+        if (publication.track) watchVideoTrack(publication.track);
+      }
+    }
 
     const saveInquiry = tool({
       description:
@@ -73,6 +114,40 @@ export default defineAgent({
     });
 
     await session.start({ agent, room: ctx.room });
+
+    // `onUserTurnCompleted` (the hook the docs suggest for this) never fires
+    // with a RealtimeModel — turn detection happens server-side inside
+    // OpenAI's realtime session, so there's no local "user turn" for the
+    // Node SDK's STT-pipeline hook to attach to. Instead, periodically push
+    // the latest camera frame straight into the agent's chat context; the
+    // realtime plugin diffs that against what OpenAI already has and sends
+    // just the new image. Replace the previous frame each time so the
+    // context (and OpenAI's per-image token cost) doesn't grow unbounded.
+    let lastImageMessageId: string | undefined;
+    const frameInterval = setInterval(async () => {
+      if (!latestFrame) return;
+      try {
+        const chatCtx = agent.chatCtx.copy();
+        if (lastImageMessageId) {
+          try {
+            chatCtx.remove(lastImageMessageId);
+          } catch {
+            // already gone
+          }
+        }
+        const message = chatCtx.addMessage({
+          role: "user",
+          content: [createImageContent({ image: latestFrame })],
+        });
+        lastImageMessageId = message.id;
+        await agent.updateChatCtx(chatCtx);
+      } catch (error) {
+        console.error("Failed to push camera frame to chat context:", error);
+      }
+    }, 3000);
+    ctx.addShutdownCallback(async () => {
+      clearInterval(frameInterval);
+    });
   },
 });
 
