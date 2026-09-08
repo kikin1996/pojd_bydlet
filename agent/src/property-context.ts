@@ -1,13 +1,24 @@
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
 
-const adapter = new PrismaPg(process.env.DATABASE_URL!);
-export const prisma = new PrismaClient({ adapter });
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export interface Property {
+  id: string;
+  name: string;
+  address: string;
+  note: string | null;
+}
 
 export async function loadPropertyContext(propertyId: string) {
-  const property = await prisma.property.findUniqueOrThrow({
-    where: { id: propertyId },
-  });
+  const { rows } = await pool.query<Property>(
+    `SELECT id, name, address, note FROM "Property" WHERE id = $1`,
+    [propertyId],
+  );
+  const property = rows[0];
+  if (!property) {
+    throw new Error(`Property ${propertyId} not found`);
+  }
 
   const instructions = [
     `Jsi profesionální realitní AI makléř, který právě vede vzdálenou prohlídku bytu "${property.name}" na adrese ${property.address}. Zájemce je fyzicky v bytě, ty ho slyšíš, mluvíš k němu přes reproduktor a zároveň vidíš obraz z kamery v bytě — občas dostaneš snímek toho, co kamera právě zabírá.`,
@@ -19,4 +30,30 @@ export async function loadPropertyContext(propertyId: string) {
   ].join("\n\n");
 
   return { property, instructions };
+}
+
+export interface InquiryInput {
+  budget?: string;
+  moveInDate?: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  notes?: string;
+}
+
+export async function saveInquiry(propertyId: string, input: InquiryInput) {
+  await pool.query(
+    `INSERT INTO "Inquiry" (id, "propertyId", budget, "moveInDate", "contactName", "contactPhone", "contactEmail", notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      randomUUID(),
+      propertyId,
+      input.budget ?? null,
+      input.moveInDate ?? null,
+      input.contactName ?? null,
+      input.contactPhone ?? null,
+      input.contactEmail ?? null,
+      input.notes ?? null,
+    ],
+  );
 }

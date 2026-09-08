@@ -20,7 +20,7 @@ import {
   type VideoFrame,
 } from "@livekit/rtc-node";
 import { z } from "zod";
-import { loadPropertyContext, prisma } from "./property-context.js";
+import { loadPropertyContext, saveInquiry as saveInquiryToDb } from "./property-context.js";
 
 // Must match AI_AGENT_NAME in src/app/api/livekit/token/route.ts of the main app
 export const AI_AGENT_NAME = "pojd-bydlet-assistant";
@@ -99,7 +99,7 @@ export default defineAgent({
         notes: z.string().optional().describe("Cokoliv dalšího důležitého, co zájemce zmínil"),
       }),
       execute: async (args) => {
-        await prisma.inquiry.create({ data: { propertyId, ...args } });
+        await saveInquiryToDb(propertyId, args);
         return "Uloženo.";
       },
     });

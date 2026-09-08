@@ -50,16 +50,28 @@ Webová platforma pro dálkové prohlídky nemovitostí: přihlášení, správa
 
 ## AI hlasový agent (`agent/`)
 
-Samostatný Node.js projekt (jiné závislosti/runtime než hlavní appka — [LiveKit Agents](https://docs.livekit.io/agents/) + OpenAI Realtime API). Když se bytové zařízení připojí ke kiosk stránce, appka ho přes `AgentDispatchClient` výslovně pozve do stejné LiveKit místnosti. Agent zná konkrétní nemovitost (název, adresu, poznámku z `Property.note`) a umí zjištěné poptávky (rozpočet, termín nastěhování, kontakt) ukládat do tabulky `Inquiry`.
+Samostatný Node.js projekt (jiné závislosti/runtime než hlavní appka — [LiveKit Agents](https://docs.livekit.io/agents/) + OpenAI Realtime API), přistupuje k databázi přímo přes `pg` (ne přes Prisma — viz "Nasazení" níže, proč). Když se bytové zařízení připojí ke kiosk stránce, token, který appka vydá, nese `roomConfig` s dispatchem agenta — LiveKit ho spustí, jakmile se místnost poprvé vytvoří. Agent zná konkrétní nemovitost (název, adresu, poznámku z `Property.note`), **vidí obraz z kamery** (viz níže) a umí zjištěné poptávky (rozpočet, termín nastěhování, kontakt) ukládat do tabulky `Inquiry`.
+
+### Lokální vývoj
 
 1. `cd agent && npm install`
 2. Zkopíruj `agent/.env.example` do `agent/.env` a vyplň `DATABASE_URL` (stejná jako v kořenovém `.env`), `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`/`LIVEKIT_URL` (stejné jako v kořenovém `.env`) a `OPENAI_API_KEY` (z [platform.openai.com](https://platform.openai.com), vyžaduje nastavený billing — Realtime API není zdarma)
 3. `npm run dev` — worker se zaregistruje k LiveKit projektu a čeká na joby
 
+### Nasazení (LiveKit Cloud)
+
+Agent běží natrvalo na LiveKit Cloud (zdarma v rámci free tier — 1000 minut/měsíc), ne na žádném vlastním serveru:
+
+1. Nainstaluj [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/) (`winget install LiveKit.LiveKitCLI` na Windows) a přihlas se: `lk cloud auth` (nebo `lk project add <jméno> --url ... --api-key ... --api-secret ...` bez prohlížeče)
+2. V `agent/` vytvoř `agent-secrets.env` s `OPENAI_API_KEY` a `DATABASE_URL` (nekomituje se, je v `.gitignore`)
+3. `lk agent create --secrets-file agent-secrets.env --region eu-central` — vygeneruje `Dockerfile`/`.dockerignore` (už upravené pro npm+tsx, ne pnpm+tsc) a `livekit.toml` (ten se commituje, obsahuje jen ID, ne tajné hodnoty)
+4. Další nasazení stejného agenta: `lk agent deploy`. Aktualizace secrets: `lk agent update-secrets --secrets-file agent-secrets.env --overwrite`. Logy: `lk agent logs`. Stav: `lk agent status`
+
 Poznámky:
-- Zatím jen zvuk (AI slyší a mluví) — vidění videa je plánované jako další krok.
-- Worker běží zatím jen lokálně; produkční hosting (LiveKit Cloud agent hosting vs. Railway/Fly.io) je samostatné rozhodnutí do budoucna.
+- Databázi zpracovává přímo přes `pg` (raw SQL), ne přes Prisma — Docker build kontext je jen `agent/`, takže by nedosáhl na sdílený generovaný Prisma klient v kořenovém `src/generated/prisma`.
+- Node.js verze `@livekit/agents` zatím nemá vestavěné vzorkování video snímků (na rozdíl od Python SDK) — `agent/src/index.ts` proto snímek z kamery ručně vzorkuje a posílá do konverzace přes `agent.updateChatCtx()` každé 3 s.
 - Testuješ-li mikrofon i reproduktor na stejném zařízení, používej sluchátka — jinak hrozí zpětnovazební smyčka (AI slyší sama sebe).
+- Region computu (`eu-central`) může být jiný než region observability projektu (recordings/transcripts) — `lk agent create` na to upozorní, pokud jde o problém pro GDPR, řeší se založením projektu s EU observability regionem.
 
 ## Struktura
 

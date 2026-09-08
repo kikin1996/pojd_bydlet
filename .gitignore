@@ -49,6 +49,7 @@ next-env.d.ts
 
 # local credential notes — never commit
 credentials.md
+agent-secrets.env
 
 # Supabase CLI local cache/state
 /supabase/.temp
