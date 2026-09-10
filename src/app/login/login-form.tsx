@@ -7,11 +7,11 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
   const [error, formAction, pending] = useActionState(loginAction, undefined);
 
   return (
-    <form action={formAction} className="flex w-full max-w-sm flex-col gap-4">
+    <form action={formAction} className="flex w-full flex-col gap-4">
       <input type="hidden" name="callbackUrl" value={callbackUrl ?? ""} />
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="email" className="text-sm font-medium text-gray-700">
+        <label htmlFor="email" className="text-sm font-medium text-foreground">
           E-mail
         </label>
         <input
@@ -20,12 +20,13 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
           type="email"
           required
           autoComplete="email"
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+          spellCheck={false}
+          className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-accent"
         />
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="password" className="text-sm font-medium text-gray-700">
+        <label htmlFor="password" className="text-sm font-medium text-foreground">
           Heslo
         </label>
         <input
@@ -34,18 +35,22 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
           type="password"
           required
           autoComplete="current-password"
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+          className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-accent"
         />
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-red-700">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-ink disabled:opacity-60"
       >
-        {pending ? "Přihlašuji..." : "Přihlásit se"}
+        {pending ? "Přihlašuji…" : "Přihlásit se"}
       </button>
     </form>
   );

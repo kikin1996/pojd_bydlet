@@ -27,6 +27,10 @@ model Property {
   name      String
   address   String
   note      String?
+  price     Int?
+  layout    String?
+  size      Int?
+  photos    String[] @default([])
   createdAt DateTime @default(now())
 
   ownerId String
@@ -34,6 +38,7 @@ model Property {
 
   device    Device?
   inquiries Inquiry[]
+  bookings  Booking[]
 }
 
 model Device {
@@ -55,6 +60,19 @@ model Inquiry {
   contactEmail String?
   notes        String?
   createdAt    DateTime @default(now())
+
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id])
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  preferredAt DateTime
+  message     String?
+  createdAt   DateTime @default(now())
 
   propertyId String
   property   Property @relation(fields: [propertyId], references: [id])

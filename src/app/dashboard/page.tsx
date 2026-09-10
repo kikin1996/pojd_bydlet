@@ -80,10 +80,31 @@ export default async function DashboardPage() {
             required
             className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
           />
+          <div className="grid grid-cols-3 gap-3">
+            <input
+              name="layout"
+              placeholder="Dispozice (2+kk)"
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+            />
+            <input
+              name="size"
+              type="number"
+              inputMode="numeric"
+              placeholder="Plocha (m²)"
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+            />
+            <input
+              name="price"
+              type="number"
+              inputMode="numeric"
+              placeholder="Nájem (Kč/měsíc)"
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+            />
+          </div>
           <textarea
             name="note"
-            placeholder="Poznámka (volitelné)"
-            rows={2}
+            placeholder="Popis bytu — vidí ho zájemci na webu a čerpá z něj i AI makléř (volitelné)"
+            rows={3}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
           />
           <button

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
@@ -9,8 +10,15 @@ export default async function LoginPage({
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
-      <h1 className="text-2xl font-semibold text-gray-900">Pojď bydlet</h1>
-      <LoginForm callbackUrl={callbackUrl} />
+      <Link href="/" className="text-2xl font-semibold text-accent-ink">
+        Pojď bydlet
+      </Link>
+      <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-6">
+        <h1 className="mb-5 text-lg font-semibold text-foreground">
+          Přihlášení pro makléře
+        </h1>
+        <LoginForm callbackUrl={callbackUrl} />
+      </div>
     </main>
   );
 }
