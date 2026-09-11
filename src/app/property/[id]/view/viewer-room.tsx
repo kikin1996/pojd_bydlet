@@ -1,17 +1,52 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Room, RoomEvent, Track, type RemoteParticipant, type RemoteTrack } from "livekit-client";
 
 type Status = "connecting" | "connected" | "error";
 
+interface VideoFeed {
+  sid: string;
+  room: string;
+  track: RemoteTrack;
+}
+
+function roomLabelForParticipant(participant: RemoteParticipant): string {
+  if (participant.metadata) {
+    try {
+      const parsed = JSON.parse(participant.metadata);
+      if (typeof parsed.room === "string") return parsed.room;
+    } catch {
+      // fall through to default label below
+    }
+  }
+  return "Byt";
+}
+
+function VideoTile({ feed }: { feed: VideoFeed }) {
+  const attach = useCallback(
+    (el: HTMLVideoElement | null) => {
+      if (el) feed.track.attach(el);
+    },
+    [feed.track],
+  );
+
+  return (
+    <div className="relative overflow-hidden rounded-lg bg-gray-900">
+      <video ref={attach} autoPlay playsInline className="w-full" />
+      <span className="absolute left-2 top-2 rounded bg-black/60 px-2 py-1 text-xs font-medium text-white">
+        {feed.room}
+      </span>
+    </div>
+  );
+}
+
 export function ViewerRoom({ propertyId }: { propertyId: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const audioContainerRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<Room | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [deviceConnected, setDeviceConnected] = useState(false);
+  const [feeds, setFeeds] = useState<VideoFeed[]>([]);
   const [micEnabled, setMicEnabled] = useState(false);
 
   useEffect(() => {
@@ -38,25 +73,31 @@ export function ViewerRoom({ propertyId }: { propertyId: string }) {
       const data = await res.json();
       if (cancelled) return;
 
-      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-        if (track.kind === Track.Kind.Video && videoRef.current) {
-          track.attach(videoRef.current);
-          setDeviceConnected(true);
-        } else if (track.kind === Track.Kind.Audio) {
-          const element = track.attach();
-          audioContainerRef.current?.appendChild(element);
-        }
-      });
+      room.on(
+        RoomEvent.TrackSubscribed,
+        (track: RemoteTrack, _publication, participant: RemoteParticipant) => {
+          if (track.kind === Track.Kind.Video && track.sid) {
+            const sid = track.sid;
+            setFeeds((prev) =>
+              prev.some((f) => f.sid === sid)
+                ? prev
+                : [...prev, { sid, room: roomLabelForParticipant(participant), track }],
+            );
+          } else if (track.kind === Track.Kind.Audio) {
+            const element = track.attach();
+            audioContainerRef.current?.appendChild(element);
+          }
+        },
+      );
 
+      // LiveKit unsubscribes a participant's tracks (firing this per track)
+      // before it fires ParticipantDisconnected, so this alone keeps `feeds`
+      // in sync when a room device goes offline — no separate handler needed.
       room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
         if (track.kind === Track.Kind.Video) {
-          setDeviceConnected(false);
+          setFeeds((prev) => prev.filter((f) => f.sid !== track.sid));
         }
         track.detach();
-      });
-
-      room.on(RoomEvent.ParticipantDisconnected, () => {
-        setDeviceConnected(room.remoteParticipants.size > 0);
       });
 
       try {
@@ -93,14 +134,14 @@ export function ViewerRoom({ propertyId }: { propertyId: string }) {
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className="relative w-full max-w-3xl overflow-hidden rounded-lg bg-gray-900">
-        <video ref={videoRef} autoPlay playsInline className="w-full" />
-        {!deviceConnected && status === "connected" && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
-            Čekám na připojení zařízení v bytě...
-          </div>
-        )}
+      <div className="grid w-full max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2">
+        {feeds.map((feed) => (
+          <VideoTile key={feed.sid} feed={feed} />
+        ))}
       </div>
+      {feeds.length === 0 && status === "connected" && (
+        <p className="text-sm text-gray-400">Čekám na připojení zařízení v bytě...</p>
+      )}
       <div ref={audioContainerRef} className="hidden" />
 
       {status === "connecting" && <p className="text-gray-500">Připojuji se...</p>}

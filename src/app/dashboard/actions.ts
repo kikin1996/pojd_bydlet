@@ -24,16 +24,12 @@ export async function createPropertyAction(formData: FormData) {
     throw new Error("Adresa je povinná.");
   }
 
-  let pairingCode = generatePairingCode();
-  // Extremely unlikely collision, but guard against it anyway.
-  while (await prisma.device.findUnique({ where: { pairingCode } })) {
-    pairingCode = generatePairingCode();
-  }
+  const pairingCode = await uniquePairingCode();
 
   const parsedPrice = typeof price === "string" && price.trim() ? Number(price) : null;
   const parsedSize = typeof size === "string" && size.trim() ? Number(size) : null;
 
-  await prisma.property.create({
+  const property = await prisma.property.create({
     data: {
       name: name.trim(),
       address: address.trim(),
@@ -42,11 +38,44 @@ export async function createPropertyAction(formData: FormData) {
       layout: typeof layout === "string" && layout.trim() ? layout.trim() : null,
       size: parsedSize !== null && !Number.isNaN(parsedSize) ? parsedSize : null,
       ownerId: session.user.id,
-      device: { create: { pairingCode } },
+      devices: { create: { pairingCode, room: "Hlavní místnost" } },
     },
   });
 
   revalidatePath("/dashboard");
+  redirect(`/dashboard/properties/${property.id}`);
+}
+
+async function uniquePairingCode() {
+  let pairingCode = generatePairingCode();
+  // Extremely unlikely collision, but guard against it anyway.
+  while (await prisma.device.findUnique({ where: { pairingCode } })) {
+    pairingCode = generatePairingCode();
+  }
+  return pairingCode;
+}
+
+export async function addRoomDeviceAction(propertyId: string, formData: FormData) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  if (!property || property.ownerId !== session.user.id) {
+    throw new Error("Nemovitost nenalezena.");
+  }
+
+  const room = formData.get("room");
+  if (typeof room !== "string" || !room.trim()) {
+    throw new Error("Název místnosti je povinný.");
+  }
+
+  const pairingCode = await uniquePairingCode();
+
+  await prisma.device.create({
+    data: { propertyId, pairingCode, room: room.trim() },
+  });
+
+  revalidatePath(`/dashboard/properties/${propertyId}`);
 }
 
 export async function logoutAction() {

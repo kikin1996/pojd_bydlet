@@ -14,7 +14,9 @@ import {
   ParticipantKind,
   RoomEvent,
   TrackKind,
+  VideoBufferType,
   VideoStream,
+  type RemoteParticipant,
   type RemoteTrack,
   type Track,
   type VideoFrame,
@@ -24,6 +26,64 @@ import { loadPropertyContext, saveInquiry as saveInquiryToDb } from "./property-
 
 // Must match AI_AGENT_NAME in src/app/api/livekit/token/route.ts of the main app
 export const AI_AGENT_NAME = "pojd-bydlet-assistant";
+
+// A property can have one camera device per room. We don't want to flood the
+// model with every room's image on every tick, so we only ever show it the
+// rooms with the most recent motion — capped at this many at once.
+const MAX_ACTIVE_ROOMS = 2;
+// How long a room stays "active" after its last detected motion, so the
+// image doesn't flicker away the instant someone stands still for a beat.
+const MOTION_GRACE_MS = 8_000;
+const MOTION_CHECK_INTERVAL_MS = 1_000;
+const IMAGE_PUSH_INTERVAL_MS = 3_000;
+// Average per-sample luma delta (0-255) between two checks that counts as motion.
+const MOTION_THRESHOLD = 10;
+// Sample every Nth pixel on each axis when fingerprinting a frame — a full
+// pixel-by-pixel diff is unnecessary for "did something move" and far more
+// expensive per room per second.
+const MOTION_SAMPLE_STEP = 16;
+
+interface RoomFeed {
+  room: string;
+  latestFrame?: VideoFrame;
+  lastMotionAt: number;
+  lastFingerprint?: Float32Array;
+}
+
+function roomLabelForParticipant(participant: RemoteParticipant): string | undefined {
+  if (!participant.metadata) return undefined;
+  try {
+    const parsed = JSON.parse(participant.metadata);
+    return typeof parsed.room === "string" ? parsed.room : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// The Y (luma) plane of an I420 frame is already a per-pixel brightness map,
+// so sampling it directly is much cheaper than converting to RGBA and doing
+// weighted-channel luminance math just to detect motion.
+function fingerprintFrame(frame: VideoFrame): Float32Array | undefined {
+  const y = frame.type === VideoBufferType.I420 ? frame : frame.convert(VideoBufferType.I420);
+  const plane = y.getPlane(0);
+  if (!plane) return undefined;
+
+  const samples: number[] = [];
+  for (let row = 0; row < y.height; row += MOTION_SAMPLE_STEP) {
+    const rowOffset = row * y.width;
+    for (let col = 0; col < y.width; col += MOTION_SAMPLE_STEP) {
+      samples.push(plane[rowOffset + col]);
+    }
+  }
+  return Float32Array.from(samples);
+}
+
+function fingerprintDelta(a: Float32Array, b: Float32Array): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+  return sum / a.length;
+}
 
 export default defineAgent({
   entry: async (ctx: JobContext) => {
@@ -59,33 +119,60 @@ export default defineAgent({
     });
 
     // The Node.js LiveKit Agents SDK doesn't yet wire up `inputOptions.videoEnabled`
-    // to actual frame sampling (unlike the Python SDK), so we do it ourselves:
-    // keep the latest camera frame around and attach it to the chat message
-    // whenever the prospective tenant finishes speaking.
-    let latestFrame: VideoFrame | undefined;
+    // to actual frame sampling (unlike the Python SDK), so we track camera
+    // tracks ourselves — one feed per room (each kiosk device tags its own
+    // room via participant metadata set in the LiveKit token).
+    const feeds = new Map<string, RoomFeed>();
     const watchedTrackSids = new Set<string>();
-    function watchVideoTrack(track: Track) {
+
+    function watchVideoTrack(track: Track, participant: RemoteParticipant) {
       if (track.kind !== TrackKind.KIND_VIDEO) return;
       if (track.sid && watchedTrackSids.has(track.sid)) return;
       if (track.sid) watchedTrackSids.add(track.sid);
-      console.log(`Watching video track ${track.sid} for frames`);
+
+      const room = roomLabelForParticipant(participant) ?? "Hlavní místnost";
+      if (!feeds.has(room)) feeds.set(room, { room, lastMotionAt: 0 });
+      console.log(`Watching video track ${track.sid} for frames (room: ${room})`);
+
       (async () => {
         for await (const event of new VideoStream(track)) {
-          if (!latestFrame) console.log("Received first video frame from camera");
-          latestFrame = event.frame;
+          const feed = feeds.get(room);
+          if (feed) feed.latestFrame = event.frame;
         }
       })();
     }
 
     // Covers tracks subscribed *after* this point...
-    ctx.room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => watchVideoTrack(track));
-    // ...and the camera track, which auto-subscribes as part of `ctx.connect()`
+    ctx.room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _publication, participant) =>
+      watchVideoTrack(track, participant),
+    );
+    // ...and camera tracks that auto-subscribed as part of `ctx.connect()`
     // above and so may already be subscribed by the time we get here.
     for (const participant of ctx.room.remoteParticipants.values()) {
       for (const publication of participant.trackPublications.values()) {
-        if (publication.track) watchVideoTrack(publication.track);
+        if (publication.track) watchVideoTrack(publication.track, participant);
       }
     }
+
+    // Cheap per-room motion check, independent of how often we actually push
+    // images to the model (see frameInterval below).
+    const motionInterval = setInterval(() => {
+      for (const feed of feeds.values()) {
+        if (!feed.latestFrame) continue;
+        try {
+          const fingerprint = fingerprintFrame(feed.latestFrame);
+          if (!fingerprint) continue;
+          if (feed.lastFingerprint) {
+            const delta = fingerprintDelta(fingerprint, feed.lastFingerprint);
+            if (delta > MOTION_THRESHOLD) feed.lastMotionAt = Date.now();
+          }
+          feed.lastFingerprint = fingerprint;
+        } catch (error) {
+          console.error(`Motion check failed for room "${feed.room}":`, error);
+        }
+      }
+    }, MOTION_CHECK_INTERVAL_MS);
+    ctx.addShutdownCallback(async () => clearInterval(motionInterval));
 
     const saveInquiry = tool({
       description:
@@ -119,32 +206,51 @@ export default defineAgent({
     // with a RealtimeModel — turn detection happens server-side inside
     // OpenAI's realtime session, so there's no local "user turn" for the
     // Node SDK's STT-pipeline hook to attach to. Instead, periodically push
-    // the latest camera frame straight into the agent's chat context; the
-    // realtime plugin diffs that against what OpenAI already has and sends
-    // just the new image. Replace the previous frame each time so the
-    // context (and OpenAI's per-image token cost) doesn't grow unbounded.
-    let lastImageMessageId: string | undefined;
+    // the latest frames from whichever room(s) currently have motion straight
+    // into the agent's chat context; the realtime plugin diffs that against
+    // what OpenAI already has and sends just the new images.
+    const pushedImageMessageIds = new Map<string, string>(); // room -> chat message id
     const frameInterval = setInterval(async () => {
-      if (!latestFrame) return;
+      const now = Date.now();
+      let activeFeeds = Array.from(feeds.values())
+        .filter((feed) => feed.latestFrame && now - feed.lastMotionAt <= MOTION_GRACE_MS)
+        .sort((a, b) => b.lastMotionAt - a.lastMotionAt)
+        .slice(0, MAX_ACTIVE_ROOMS);
+
+      // Nothing moved recently anywhere — fall back to a single camera so the
+      // AI isn't blind while the visitor stands still.
+      if (activeFeeds.length === 0) {
+        const fallback = Array.from(feeds.values())
+          .filter((feed) => feed.latestFrame)
+          .sort((a, b) => b.lastMotionAt - a.lastMotionAt)[0];
+        if (fallback) activeFeeds = [fallback];
+      }
+      if (activeFeeds.length === 0) return;
+
       try {
         const chatCtx = agent.chatCtx.copy();
-        if (lastImageMessageId) {
+        for (const messageId of pushedImageMessageIds.values()) {
           try {
-            chatCtx.remove(lastImageMessageId);
+            chatCtx.remove(messageId);
           } catch {
             // already gone
           }
         }
-        const message = chatCtx.addMessage({
-          role: "user",
-          content: [createImageContent({ image: latestFrame })],
-        });
-        lastImageMessageId = message.id;
+        pushedImageMessageIds.clear();
+
+        for (const feed of activeFeeds) {
+          if (!feed.latestFrame) continue;
+          const message = chatCtx.addMessage({
+            role: "user",
+            content: [`Kamera: ${feed.room}`, createImageContent({ image: feed.latestFrame })],
+          });
+          pushedImageMessageIds.set(feed.room, message.id);
+        }
         await agent.updateChatCtx(chatCtx);
       } catch (error) {
-        console.error("Failed to push camera frame to chat context:", error);
+        console.error("Failed to push camera frames to chat context:", error);
       }
-    }, 3000);
+    }, IMAGE_PUSH_INTERVAL_MS);
     ctx.addShutdownCallback(async () => {
       clearInterval(frameInterval);
     });

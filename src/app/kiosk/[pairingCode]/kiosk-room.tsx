@@ -13,6 +13,7 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [propertyName, setPropertyName] = useState<string | null>(null);
   const [propertyAddress, setPropertyAddress] = useState<string | null>(null);
+  const [room, setRoom] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -44,6 +45,7 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
 
       setPropertyName(data.propertyName ?? null);
       setPropertyAddress(data.propertyAddress ?? null);
+      setRoom(data.room ?? null);
 
       room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
         if (track.kind === Track.Kind.Audio) {
@@ -155,7 +157,8 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
       {status === "connecting" && <p className="text-gray-400">Připojuji se...</p>}
       {status === "connected" && (
         <p className="text-sm text-gray-400">
-          Připojeno{propertyName ? ` — ${propertyName}` : ""}
+          Připojeno{room ? ` — ${room}` : ""}
+          {propertyName ? ` · ${propertyName}` : ""}
           {propertyAddress ? ` (${propertyAddress})` : ""}
         </p>
       )}

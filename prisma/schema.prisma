@@ -36,7 +36,7 @@ model Property {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id])
 
-  device    Device?
+  devices   Device[]
   inquiries Inquiry[]
   bookings  Booking[]
 }
@@ -44,10 +44,11 @@ model Property {
 model Device {
   id          String    @id @default(cuid())
   pairingCode String    @unique
+  room        String    @default("Hlavní místnost")
   lastSeenAt  DateTime?
   createdAt   DateTime  @default(now())
 
-  propertyId String   @unique
+  propertyId String
   property   Property @relation(fields: [propertyId], references: [id])
 }
 

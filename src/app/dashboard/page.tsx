@@ -9,7 +9,7 @@ export default async function DashboardPage() {
 
   const properties = await prisma.property.findMany({
     where: { ownerId: session!.user!.id },
-    include: { device: true },
+    include: { devices: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -35,7 +35,9 @@ export default async function DashboardPage() {
         )}
 
         {properties.map((property) => {
-          const online = isDeviceOnline(property.device?.lastSeenAt ?? null);
+          const online = property.devices.some((device) =>
+            isDeviceOnline(device.lastSeenAt),
+          );
           return (
             <Link
               key={property.id}

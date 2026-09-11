@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isDeviceOnline } from "@/lib/device-status";
+import { addRoomDeviceAction } from "../../actions";
 
 export default async function PropertyDetailPage({
   params,
@@ -15,7 +16,7 @@ export default async function PropertyDetailPage({
 
   const property = await prisma.property.findUnique({
     where: { id },
-    include: { device: true },
+    include: { devices: { orderBy: { createdAt: "asc" } } },
   });
 
   if (!property || property.ownerId !== session!.user!.id) {
@@ -34,10 +35,7 @@ export default async function PropertyDetailPage({
 
   const headersList = await headers();
   const origin = `${headersList.get("x-forwarded-proto") ?? "http"}://${headersList.get("host")}`;
-  const kioskUrl = property.device
-    ? `${origin}/kiosk/${property.device.pairingCode}`
-    : null;
-  const online = isDeviceOnline(property.device?.lastSeenAt ?? null);
+  const addRoomForThisProperty = addRoomDeviceAction.bind(null, property.id);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-10">
@@ -52,29 +50,63 @@ export default async function PropertyDetailPage({
       </div>
 
       <section className="rounded-lg border border-gray-200 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">Zařízení v bytě</h2>
-          <span
-            className={`flex items-center gap-1.5 text-xs font-medium ${
-              online ? "text-green-600" : "text-gray-400"
-            }`}
-          >
-            <span className={`h-2 w-2 rounded-full ${online ? "bg-green-500" : "bg-gray-300"}`} />
-            {online ? "Online" : "Offline"}
-          </span>
-        </div>
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">
+          Zařízení po místnostech ({property.devices.length})
+        </h2>
 
-        {kioskUrl && (
-          <div className="flex flex-col gap-1">
-            <p className="text-sm text-gray-600">
-              Otevři tento odkaz na zařízení v bytě (tablet, notebook s kamerou a
-              mikrofonem):
-            </p>
-            <code className="break-all rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-800">
-              {kioskUrl}
-            </code>
-          </div>
-        )}
+        <ul className="flex flex-col gap-3">
+          {property.devices.map((device) => {
+            const online = isDeviceOnline(device.lastSeenAt);
+            const kioskUrl = `${origin}/kiosk/${device.pairingCode}`;
+            return (
+              <li
+                key={device.id}
+                className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-900">{device.room}</p>
+                  <span
+                    className={`flex items-center gap-1.5 text-xs font-medium ${
+                      online ? "text-green-600" : "text-gray-400"
+                    }`}
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        online ? "bg-green-500" : "bg-gray-300"
+                      }`}
+                    />
+                    {online ? "Online" : "Offline"}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">
+                  Otevři tento odkaz na zařízení v dané místnosti (tablet/telefon s
+                  kamerou a mikrofonem):
+                </p>
+                <code className="mt-1 block break-all rounded-md bg-white px-3 py-2 text-sm text-gray-800">
+                  {kioskUrl}
+                </code>
+              </li>
+            );
+          })}
+        </ul>
+
+        <form
+          action={addRoomForThisProperty}
+          className="mt-4 flex gap-2 border-t border-gray-200 pt-4"
+        >
+          <input
+            name="room"
+            placeholder="Název místnosti (např. Ložnice)"
+            required
+            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Přidat místnost
+          </button>
+        </form>
       </section>
 
       <Link

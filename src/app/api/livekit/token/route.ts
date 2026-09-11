@@ -101,6 +101,7 @@ export async function POST(request: Request) {
   const token = new AccessToken(apiKey, apiSecret, {
     identity: `device-${device.id}`,
     name: device.property.name,
+    metadata: JSON.stringify({ room: device.room }),
   });
   token.addGrant({
     room: roomNameForProperty(device.propertyId),
@@ -113,6 +114,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     token: await token.toJwt(),
     url,
+    room: device.room,
     propertyName: device.property.name,
     propertyAddress: device.property.address,
   });
