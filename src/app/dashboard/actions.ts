@@ -1,10 +1,12 @@
 "use server";
 
+import { extractText } from "unpdf";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generatePairingCode } from "@/lib/pairing-code";
+import { uploadPropertyDocument } from "@/lib/supabase-storage";
 
 export async function createPropertyAction(formData: FormData) {
   const session = await auth();
@@ -75,6 +77,52 @@ export async function addRoomDeviceAction(propertyId: string, formData: FormData
     data: { propertyId, pairingCode, room: room.trim() },
   });
 
+  revalidatePath(`/dashboard/properties/${propertyId}`);
+}
+
+export async function addDocumentAction(propertyId: string, formData: FormData) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  if (!property || property.ownerId !== session.user.id) {
+    throw new Error("Nemovitost nenalezena.");
+  }
+
+  const title = formData.get("title");
+  const file = formData.get("file");
+  if (typeof title !== "string" || !title.trim()) {
+    throw new Error("Název dokumentu je povinný.");
+  }
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Vyber PDF soubor.");
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { text } = await extractText(bytes, { mergePages: true });
+  if (!text.trim()) {
+    throw new Error("Z tohoto PDF se nepodařilo přečíst žádný text (může jít o naskenované obrázky).");
+  }
+
+  const fileUrl = await uploadPropertyDocument(propertyId, file);
+
+  await prisma.propertyDocument.create({
+    data: { propertyId, title: title.trim(), content: text, fileUrl },
+  });
+
+  revalidatePath(`/dashboard/properties/${propertyId}`);
+}
+
+export async function deleteDocumentAction(propertyId: string, documentId: string) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  if (!property || property.ownerId !== session.user.id) {
+    throw new Error("Nemovitost nenalezena.");
+  }
+
+  await prisma.propertyDocument.delete({ where: { id: documentId, propertyId } });
   revalidatePath(`/dashboard/properties/${propertyId}`);
 }
 

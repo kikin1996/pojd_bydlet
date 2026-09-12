@@ -12,6 +12,7 @@ model User {
   email        String   @unique
   passwordHash String
   name         String
+  phone        String?
   role         Role     @default(ADMIN)
   createdAt    DateTime @default(now())
 
@@ -39,6 +40,7 @@ model Property {
   devices   Device[]
   inquiries Inquiry[]
   bookings  Booking[]
+  documents PropertyDocument[]
 }
 
 model Device {
@@ -61,6 +63,17 @@ model Inquiry {
   contactEmail String?
   notes        String?
   createdAt    DateTime @default(now())
+
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id])
+}
+
+model PropertyDocument {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  fileUrl   String
+  createdAt DateTime @default(now())
 
   propertyId String
   property   Property @relation(fields: [propertyId], references: [id])

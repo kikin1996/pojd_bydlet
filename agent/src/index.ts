@@ -22,7 +22,11 @@ import {
   type VideoFrame,
 } from "@livekit/rtc-node";
 import { z } from "zod";
-import { loadPropertyContext, saveInquiry as saveInquiryToDb } from "./property-context.js";
+import {
+  loadPropertyContext,
+  saveInquiry as saveInquiryToDb,
+  searchDocuments,
+} from "./property-context.js";
 
 // Must match AI_AGENT_NAME in src/app/api/livekit/token/route.ts of the main app
 export const AI_AGENT_NAME = "pojd-bydlet-assistant";
@@ -103,7 +107,7 @@ export default defineAgent({
       return;
     }
 
-    const { property, instructions } = await loadPropertyContext(propertyId);
+    const { property, documents, instructions } = await loadPropertyContext(propertyId);
     // Set by the switchCamera tool below, once `feeds` exists.
     let pinnedRoom: { room: string; until: number } | undefined;
     console.log(`Agent joining room for property "${property.name}" (${property.id})`);
@@ -213,9 +217,18 @@ export default defineAgent({
       },
     });
 
+    const searchPropertyDocuments = tool({
+      description:
+        "Vyhledej informaci v nahraných dokumentech k bytu (smlouva, energetický štítek, pravidla domu...). Použij, když se zájemce zeptá na něco, co by mohlo být v oficiálním dokumentu, místo abys hádal.",
+      parameters: z.object({
+        query: z.string().describe("Co hledáš, např. 'výše kauce' nebo 'pravidla pro domácí mazlíčky'"),
+      }),
+      execute: async ({ query }) => searchDocuments(documents, query),
+    });
+
     const agent = voice.Agent.create({
       instructions,
-      tools: { saveInquiry, switchCamera },
+      tools: { saveInquiry, switchCamera, searchPropertyDocuments },
     });
 
     const session = new voice.AgentSession({

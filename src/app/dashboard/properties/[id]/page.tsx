@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isDeviceOnline } from "@/lib/device-status";
-import { addRoomDeviceAction } from "../../actions";
+import { addRoomDeviceAction, addDocumentAction, deleteDocumentAction } from "../../actions";
 
 export default async function PropertyDetailPage({
   params,
@@ -33,9 +33,16 @@ export default async function PropertyDetailPage({
     orderBy: { preferredAt: "asc" },
   });
 
+  const documents = await prisma.propertyDocument.findMany({
+    where: { propertyId: property.id },
+    orderBy: { createdAt: "desc" },
+  });
+
   const headersList = await headers();
   const origin = `${headersList.get("x-forwarded-proto") ?? "http"}://${headersList.get("host")}`;
   const addRoomForThisProperty = addRoomDeviceAction.bind(null, property.id);
+  const addDocumentForThisProperty = addDocumentAction.bind(null, property.id);
+  const deleteDocumentForThisProperty = deleteDocumentAction.bind(null, property.id);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-10">
@@ -105,6 +112,69 @@ export default async function PropertyDetailPage({
             className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
           >
             Přidat místnost
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 p-4">
+        <h2 className="mb-3 text-sm font-semibold text-gray-900">
+          Dokumenty k bytu ({documents.length})
+        </h2>
+        <p className="mb-3 text-sm text-gray-500">
+          PDF dokumenty (smlouva, energetický štítek, pravidla domu...), ze kterých může
+          AI makléř při prohlídce čerpat a ověřovat informace.
+        </p>
+
+        {documents.length > 0 && (
+          <ul className="mb-4 flex flex-col gap-2">
+            {documents.map((doc) => (
+              <li
+                key={doc.id}
+                className="flex items-center justify-between gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
+              >
+                <a
+                  href={doc.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate text-sm font-medium text-gray-900 hover:underline"
+                >
+                  {doc.title}
+                </a>
+                <form action={deleteDocumentForThisProperty.bind(null, doc.id)}>
+                  <button
+                    type="submit"
+                    className="shrink-0 text-xs text-red-600 hover:underline"
+                  >
+                    Smazat
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form
+          action={addDocumentForThisProperty}
+          className="flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row"
+        >
+          <input
+            name="title"
+            placeholder="Název (např. Nájemní smlouva)"
+            required
+            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+          />
+          <input
+            name="file"
+            type="file"
+            accept="application/pdf"
+            required
+            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm file:mr-2 file:rounded file:border-0 file:bg-gray-200 file:px-2 file:py-1 file:text-xs"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Nahrát
           </button>
         </form>
       </section>
