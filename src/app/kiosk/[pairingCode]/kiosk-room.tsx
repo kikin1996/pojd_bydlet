@@ -6,7 +6,8 @@ import { Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
 type Status = "connecting" | "connected" | "error";
 
 export function KioskRoom({ pairingCode }: { pairingCode: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const selfVideoRef = useRef<HTMLVideoElement>(null);
+  const avatarVideoRef = useRef<HTMLVideoElement>(null);
   const audioContainerRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<Room | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
@@ -17,6 +18,7 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [avatarConnected, setAvatarConnected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +53,18 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
         if (track.kind === Track.Kind.Audio) {
           const element = track.attach();
           audioContainerRef.current?.appendChild(element);
+        } else if (track.kind === Track.Kind.Video && avatarVideoRef.current) {
+          // The only remote video track a kiosk device ever receives is the
+          // AI's talking-avatar face (Tavus), published as its own participant.
+          track.attach(avatarVideoRef.current);
+          setAvatarConnected(true);
+        }
+      });
+
+      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        if (track.kind === Track.Kind.Video) {
+          track.detach();
+          setAvatarConnected(false);
         }
       });
 
@@ -82,8 +96,8 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
         const cameraTrack = room.localParticipant.getTrackPublication(
           Track.Source.Camera,
         )?.videoTrack;
-        if (cameraTrack && videoRef.current) {
-          cameraTrack.attach(videoRef.current);
+        if (cameraTrack && selfVideoRef.current) {
+          cameraTrack.attach(selfVideoRef.current);
         }
 
         if (!cancelled) {
@@ -145,13 +159,26 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black px-4 text-white">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="max-h-[80vh] w-full max-w-3xl rounded-lg bg-gray-900"
-      />
+      <div className="relative max-h-[80vh] w-full max-w-3xl">
+        <video
+          ref={avatarVideoRef}
+          autoPlay
+          playsInline
+          className="w-full rounded-lg bg-gray-900"
+        />
+        {!avatarConnected && status === "connected" && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-gray-900 text-sm text-gray-400">
+            Čekám na AI makléře...
+          </div>
+        )}
+        <video
+          ref={selfVideoRef}
+          autoPlay
+          playsInline
+          muted
+          className="absolute bottom-3 right-3 h-24 w-36 rounded-md border border-white/20 bg-gray-800 object-cover"
+        />
+      </div>
       <div ref={audioContainerRef} className="hidden" />
 
       {status === "connecting" && <p className="text-gray-400">Připojuji se...</p>}

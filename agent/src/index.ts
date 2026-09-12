@@ -10,6 +10,7 @@ import {
   type JobContext,
 } from "@livekit/agents";
 import * as openai from "@livekit/agents-plugin-openai";
+import * as tavus from "@livekit/agents-plugin-tavus";
 import {
   ParticipantKind,
   RoomEvent,
@@ -236,6 +237,14 @@ export default defineAgent({
     });
 
     await session.start({ agent, room: ctx.room });
+
+    // Renders a talking avatar face by lip-syncing to our own agent's audio
+    // output — Tavus doesn't need to understand Czech for this, it's just
+    // matching mouth shapes to whatever audio we already produce.
+    if (process.env.TAVUS_API_KEY) {
+      const avatar = new tavus.AvatarSession();
+      await avatar.start(session, ctx.room);
+    }
 
     // `onUserTurnCompleted` (the hook the docs suggest for this) never fires
     // with a RealtimeModel — turn detection happens server-side inside

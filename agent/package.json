@@ -8,8 +8,9 @@
     "start": "tsx src/index.ts start"
   },
   "dependencies": {
-    "@livekit/agents": "^1.8.0",
-    "@livekit/agents-plugin-openai": "^1.8.0",
+    "@livekit/agents": "^1.8.1",
+    "@livekit/agents-plugin-openai": "^1.8.1",
+    "@livekit/agents-plugin-tavus": "^1.8.1",
     "@livekit/rtc-node": "^0.13.34",
     "dotenv": "^17.4.2",
     "pg": "^8.23.0",
@@ -20,5 +21,8 @@
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.12",
     "typescript": "^5"
+  },
+  "overrides": {
+    "sharp": "^0.35.4"
   }
 }
