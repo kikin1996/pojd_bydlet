@@ -8,11 +8,12 @@ export interface Property {
   name: string;
   address: string;
   note: string | null;
+  agentInstructions: string | null;
 }
 
 export async function loadPropertyContext(propertyId: string) {
   const { rows } = await pool.query<Property>(
-    `SELECT id, name, address, note FROM "Property" WHERE id = $1`,
+    `SELECT id, name, address, note, "agentInstructions" FROM "Property" WHERE id = $1`,
     [propertyId],
   );
   const property = rows[0];
@@ -34,6 +35,9 @@ export async function loadPropertyContext(propertyId: string) {
       ? `Byt má kamery v těchto místnostech: ${rooms.join(", ")}. Automaticky ti chodí obraz z míst, kde je zrovna pohyb, ale pokud potřebuješ vidět konkrétní místnost i bez pohybu (např. se zájemce zeptá na kuchyň, zatímco stojí v obýváku), zavolej nástroj switchCamera s přesným názvem té místnosti.`
       : "Byt zatím nemá připojenou žádnou kameru.",
     "Obraz z kamer komentuj přirozeně, jen když je to k věci (např. zájemce něco ukazuje nebo se zeptá na konkrétní místo, kam se dívá) — nepopisuj nahlas každý jednotlivý snímek a nepředstírej, že vidíš víc, než skutečně vidíš na posledních snímcích. Pokud najednou nevidíš žádný obrázek z místnosti, kde je podle rozhovoru zájemce, klidně se zeptej, jestli je v pořádku, ale nevymýšlej si, co tam vidíš.",
+    property.agentInstructions
+      ? `Interní pokyny od makléře pro tuto prohlídku (návštěvník je nevidí, řiď se jimi): ${property.agentInstructions}`
+      : null,
     property.note
       ? `Informace o bytě, ze kterých máš čerpat: ${property.note}`
       : "O bytě zatím nemáš žádné doplňující informace nad rámec názvu a adresy — pokud se tě zájemce zeptá na detail, který neznáš, upřímně řekni, že to zjistíš a ozveš se, nevymýšlej si.",
@@ -41,7 +45,9 @@ export async function loadPropertyContext(propertyId: string) {
       ? `K bytu je nahráno ${documents.length} dokument(ů) (např. smlouva, energetický štítek, pravidla domu). Pokud se zájemce zeptá na něco, co by mohlo být v oficiálním dokumentu (kauce, pravidla pro zvířata, poplatky...), zavolej nástroj searchPropertyDocuments místo hádání.`
       : "K bytu zatím nejsou nahrané žádné dokumenty.",
     "Mluv česky, přátelsky, stručně a věcně. Zároveň aktivně zjišťuj od zájemce: jeho rozpočet, kdy se chce nastěhovat, kolik lidí bude v bytě bydlet, a kontaktní údaje (jméno, telefon nebo e-mail). Jakmile zjistíš alespoň některou z těchto informací, hned zavolej nástroj saveInquiry a ulož ji — i částečně, průběžně, ne až na konci.",
-  ].join("\n\n");
+  ]
+    .filter((part): part is string => part !== null)
+    .join("\n\n");
 
   return { property, rooms, documents, instructions };
 }

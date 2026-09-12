@@ -24,15 +24,16 @@ enum Role {
 }
 
 model Property {
-  id        String   @id @default(cuid())
-  name      String
-  address   String
-  note      String?
-  price     Int?
-  layout    String?
-  size      Int?
-  photos    String[] @default([])
-  createdAt DateTime @default(now())
+  id                String   @id @default(cuid())
+  name              String
+  address           String
+  note              String?
+  agentInstructions String?
+  price             Int?
+  layout            String?
+  size              Int?
+  photos            String[] @default([])
+  createdAt         DateTime @default(now())
 
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id])

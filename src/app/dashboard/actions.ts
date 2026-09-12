@@ -126,6 +126,30 @@ export async function deleteDocumentAction(propertyId: string, documentId: strin
   revalidatePath(`/dashboard/properties/${propertyId}`);
 }
 
+export async function updateAgentInstructionsAction(propertyId: string, formData: FormData) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  if (!property || property.ownerId !== session.user.id) {
+    throw new Error("Nemovitost nenalezena.");
+  }
+
+  const agentInstructions = formData.get("agentInstructions");
+
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: {
+      agentInstructions:
+        typeof agentInstructions === "string" && agentInstructions.trim()
+          ? agentInstructions.trim()
+          : null,
+    },
+  });
+
+  revalidatePath(`/dashboard/properties/${propertyId}`);
+}
+
 export async function logoutAction() {
   await signOut({ redirectTo: "/login" });
 }

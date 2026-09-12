@@ -4,7 +4,12 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isDeviceOnline } from "@/lib/device-status";
-import { addRoomDeviceAction, addDocumentAction, deleteDocumentAction } from "../../actions";
+import {
+  addRoomDeviceAction,
+  addDocumentAction,
+  deleteDocumentAction,
+  updateAgentInstructionsAction,
+} from "../../actions";
 
 export default async function PropertyDetailPage({
   params,
@@ -43,6 +48,7 @@ export default async function PropertyDetailPage({
   const addRoomForThisProperty = addRoomDeviceAction.bind(null, property.id);
   const addDocumentForThisProperty = addDocumentAction.bind(null, property.id);
   const deleteDocumentForThisProperty = deleteDocumentAction.bind(null, property.id);
+  const updateInstructionsForThisProperty = updateAgentInstructionsAction.bind(null, property.id);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-10">
@@ -112,6 +118,30 @@ export default async function PropertyDetailPage({
             className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
           >
             Přidat místnost
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 p-4">
+        <h2 className="mb-1 text-sm font-semibold text-gray-900">Pokyny pro AI makléře</h2>
+        <p className="mb-3 text-sm text-gray-500">
+          Interní instrukce, jak se má AI chovat při prohlídce (např. na co upozornit,
+          čemu se vyhnout, jak reagovat na dotaz na slevu). Na rozdíl od popisu bytu se
+          tohle nezobrazuje veřejně na webu.
+        </p>
+        <form action={updateInstructionsForThisProperty} className="flex flex-col gap-2">
+          <textarea
+            name="agentInstructions"
+            defaultValue={property.agentInstructions ?? ""}
+            rows={4}
+            placeholder="Např. Byt je po rekonstrukci, zdůrazni novou kuchyň. Sleva na nájmu není možná, v tomto případě zájemce nasměruj přímo na makléře."
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="self-start rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Uložit pokyny
           </button>
         </form>
       </section>
