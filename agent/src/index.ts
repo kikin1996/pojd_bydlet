@@ -104,6 +104,8 @@ export default defineAgent({
     }
 
     const { property, instructions } = await loadPropertyContext(propertyId);
+    // Set by the switchCamera tool below, once `feeds` exists.
+    let pinnedRoom: { room: string; until: number } | undefined;
     console.log(`Agent joining room for property "${property.name}" (${property.id})`);
 
     // Leave once no human (kiosk device, viewer, ...) is left in the room —
@@ -191,9 +193,29 @@ export default defineAgent({
       },
     });
 
+    const switchCamera = tool({
+      description:
+        "Podívej se cíleně na kameru v konkrétní místnosti, i když v ní teď není detekovaný pohyb — použij, když potřebuješ vidět jinou místnost, než kde se zájemce zrovna nachází (např. se zeptá na kuchyň, ale stojí v obýváku).",
+      parameters: z.object({
+        room: z.string().describe("Přesný název místnosti, přesně jak byl uveden v instrukcích (např. 'Ložnice')."),
+      }),
+      execute: async ({ room }) => {
+        const feed = feeds.get(room);
+        if (!feed) {
+          const available = Array.from(feeds.keys()).join(", ") || "žádná zatím není připojená";
+          return `Kamera "${room}" neexistuje nebo není připojená. Dostupné kamery: ${available}.`;
+        }
+        if (!feed.latestFrame) {
+          return `Kamera "${room}" je připojená, ale zatím z ní nemám žádný obraz.`;
+        }
+        pinnedRoom = { room, until: Date.now() + 15_000 };
+        return `Dívám se teď do místnosti "${room}".`;
+      },
+    });
+
     const agent = voice.Agent.create({
       instructions,
-      tools: { saveInquiry },
+      tools: { saveInquiry, switchCamera },
     });
 
     const session = new voice.AgentSession({
@@ -225,6 +247,21 @@ export default defineAgent({
           .sort((a, b) => b.lastMotionAt - a.lastMotionAt)[0];
         if (fallback) activeFeeds = [fallback];
       }
+
+      // The switchCamera tool lets the agent deliberately look somewhere
+      // without motion — honor that for a short window regardless of what
+      // motion detection picked, so the tool call has a visible effect.
+      if (pinnedRoom) {
+        if (pinnedRoom.until < now) {
+          pinnedRoom = undefined;
+        } else {
+          const pinnedFeed = feeds.get(pinnedRoom.room);
+          if (pinnedFeed?.latestFrame && !activeFeeds.includes(pinnedFeed)) {
+            activeFeeds = [pinnedFeed, ...activeFeeds].slice(0, MAX_ACTIVE_ROOMS);
+          }
+        }
+      }
+
       if (activeFeeds.length === 0) return;
 
       try {
