@@ -20,23 +20,12 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [avatarConnected, setAvatarConnected] = useState(false);
-  const [avatarFullscreen, setAvatarFullscreen] = useState(false);
-
-  useEffect(() => {
-    function handleFullscreenChange() {
-      setAvatarFullscreen(document.fullscreenElement === avatarContainerRef.current);
-    }
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
-  async function toggleAvatarFullscreen() {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-    } else {
-      await avatarContainerRef.current?.requestFullscreen();
-    }
-  }
+  // A CSS-driven "expanded" state rather than the real Fullscreen API — that
+  // API is unreliable for non-video elements on tablet browsers (notably
+  // Safari/iPadOS), so this covers the viewport with a fixed overlay instead,
+  // which behaves identically everywhere and is always reversible from the
+  // same visible button.
+  const [avatarExpanded, setAvatarExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,8 +178,8 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
         <div
           ref={avatarContainerRef}
           className={
-            avatarFullscreen
-              ? "relative bg-black"
+            avatarExpanded
+              ? "fixed inset-0 z-50 bg-black"
               : "absolute bottom-3 right-3 h-28 w-40 overflow-hidden rounded-md border border-white/20 bg-gray-800"
           }
         >
@@ -198,7 +187,7 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
             ref={avatarVideoRef}
             autoPlay
             playsInline
-            className={avatarFullscreen ? "h-full w-full object-contain" : "h-full w-full object-cover"}
+            className={avatarExpanded ? "h-full w-full object-contain" : "h-full w-full object-cover"}
           />
           {!avatarConnected && status === "connected" && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-center text-xs text-gray-400">
@@ -207,14 +196,21 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
           )}
           <button
             type="button"
-            onClick={toggleAvatarFullscreen}
-            aria-label={avatarFullscreen ? "Zmenšit avatara" : "Zvětšit avatara na celou obrazovku"}
-            className="absolute right-1.5 top-1.5 rounded bg-black/60 p-1.5 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-white"
+            onClick={() => setAvatarExpanded((prev) => !prev)}
+            aria-label={avatarExpanded ? "Zmenšit avatara" : "Zvětšit avatara na celou obrazovku"}
+            className={
+              avatarExpanded
+                ? "absolute right-3 top-3 flex items-center gap-1.5 rounded bg-black/70 px-3 py-2 text-sm text-white hover:bg-black/90 focus-visible:outline-2 focus-visible:outline-white"
+                : "absolute right-1.5 top-1.5 rounded bg-black/60 p-1.5 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-white"
+            }
           >
-            {avatarFullscreen ? (
-              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                <path d="M8 3v3a2 2 0 0 1-2 2H3M12 3v3a2 2 0 0 0 2 2h3M8 17v-3a2 2 0 0 0-2-2H3M12 17v-3a2 2 0 0 1 2-2h3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            {avatarExpanded ? (
+              <>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                  <path d="M8 3v3a2 2 0 0 1-2 2H3M12 3v3a2 2 0 0 0 2 2h3M8 17v-3a2 2 0 0 0-2-2H3M12 17v-3a2 2 0 0 1 2-2h3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Zmenšit
+              </>
             ) : (
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
                 <path d="M7 3H3v4M13 3h4v4M7 17H3v-4M13 17h4v-4" strokeLinecap="round" strokeLinejoin="round" />
