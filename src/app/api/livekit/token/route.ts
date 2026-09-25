@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import {
   AccessToken,
+  AgentDispatchClient,
   RoomConfiguration,
   RoomAgentDispatch,
+  RoomServiceClient,
 } from "livekit-server-sdk";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -30,6 +32,30 @@ function agentRoomConfig(propertyId: string) {
       }),
     ],
   });
+}
+
+const PARTICIPANT_KIND_AGENT = 4;
+
+// The roomConfig dispatch above only fires when a room is *created*. If the
+// last human leaves (e.g. a kiosk page reload), the agent shuts itself down
+// but the room lingers for a while — a device rejoining then lands in a
+// live room with no agent and no new dispatch. So when the room already
+// exists and has no agent, dispatch one explicitly. (A room that doesn't
+// exist yet is left to the roomConfig path, so we never double-dispatch
+// there; the agent itself also backs off if it finds a duplicate.)
+async function ensureAgentInExistingRoom(url: string, apiKey: string, apiSecret: string, propertyId: string) {
+  const httpUrl = url.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+  const roomName = roomNameForProperty(propertyId);
+  try {
+    const participants = await new RoomServiceClient(httpUrl, apiKey, apiSecret).listParticipants(roomName);
+    if (participants.some((p) => p.kind === PARTICIPANT_KIND_AGENT)) return;
+    await new AgentDispatchClient(httpUrl, apiKey, apiSecret).createDispatch(roomName, AI_AGENT_NAME, {
+      metadata: JSON.stringify({ propertyId }),
+    });
+  } catch {
+    // Room doesn't exist yet (or LiveKit hiccup): the token's roomConfig
+    // dispatch covers the first-join case.
+  }
 }
 
 export async function POST(request: Request) {
@@ -97,6 +123,8 @@ export async function POST(request: Request) {
     where: { id: device.id },
     data: { lastSeenAt: new Date() },
   });
+
+  await ensureAgentInExistingRoom(url, apiKey, apiSecret, device.propertyId);
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity: `device-${device.id}`,

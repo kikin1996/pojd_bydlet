@@ -113,6 +113,20 @@ export default defineAgent({
     let pinnedRoom: { room: string; until: number } | undefined;
     console.log(`Agent joining room for property "${property.name}" (${property.id})`);
 
+    // Two agents can be dispatched at nearly the same moment (e.g. two
+    // kiosks reloading into an agent-less room). Whichever has the lowest
+    // identity stays; the other backs off so the visitor never hears two.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const myIdentity = ctx.room.localParticipant?.identity ?? "";
+    const otherBackendAgents = Array.from(ctx.room.remoteParticipants.values()).filter(
+      (p) => p.kind === ParticipantKind.AGENT && p.identity.startsWith("agent-"),
+    );
+    if (otherBackendAgents.some((p) => p.identity < myIdentity)) {
+      console.log("Another agent already covers this room, shutting down.");
+      ctx.shutdown("duplicate agent");
+      return;
+    }
+
     // Leave once no human (kiosk device, viewer, ...) is left in the room —
     // ignoring other agent participants, which would otherwise keep this
     // count above zero forever if more than one ever ends up in the room.
