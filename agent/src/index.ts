@@ -130,13 +130,16 @@ export default defineAgent({
     // Leave once no human (kiosk device, viewer, ...) is left in the room —
     // ignoring other agent participants, which would otherwise keep this
     // count above zero forever if more than one ever ends up in the room.
+    // Wait a grace period before leaving: a page reload disconnects the old
+    // connection a moment before the new one shows up, and leaving in that
+    // gap strands the rejoining device in a live room with no agent.
+    const hasHuman = () =>
+      Array.from(ctx.room.remoteParticipants.values()).some((p) => p.kind !== ParticipantKind.AGENT);
     ctx.room.on(RoomEvent.ParticipantDisconnected, () => {
-      const hasHumanParticipant = Array.from(
-        ctx.room.remoteParticipants.values(),
-      ).some((p) => p.kind !== ParticipantKind.AGENT);
-      if (!hasHumanParticipant) {
-        ctx.shutdown("room has no human participants left");
-      }
+      if (hasHuman()) return;
+      setTimeout(() => {
+        if (!hasHuman()) ctx.shutdown("room has no human participants left");
+      }, 30_000);
     });
 
     // The Node.js LiveKit Agents SDK doesn't yet wire up `inputOptions.videoEnabled`
@@ -268,12 +271,22 @@ export default defineAgent({
     // into the agent's chat context; the realtime plugin diffs that against
     // what OpenAI already has and sends just the new images.
     const pushedImageMessageIds = new Map<string, string>(); // room -> chat message id
+    let presenceRoom: string | undefined;
+    let publishedPresenceRoom: string | undefined;
     const frameInterval = setInterval(async () => {
       const now = Date.now();
       let activeFeeds = Array.from(feeds.values())
         .filter((feed) => feed.latestFrame && now - feed.lastMotionAt <= MOTION_GRACE_MS)
         .sort((a, b) => b.lastMotionAt - a.lastMotionAt)
         .slice(0, MAX_ACTIVE_ROOMS);
+
+      // Where the visitor "is" decides which room's kiosk shows the avatar.
+      // Follows real motion only (not switchCamera peeks), and sticks to the
+      // current room while it still has motion so it doesn't flap.
+      const motionRooms = activeFeeds.map((feed) => feed.room);
+      if (motionRooms.length > 0 && (!presenceRoom || !motionRooms.includes(presenceRoom))) {
+        presenceRoom = motionRooms[0];
+      }
 
       // Nothing moved recently anywhere — fall back to a single camera so the
       // AI isn't blind while the visitor stands still.
@@ -282,6 +295,14 @@ export default defineAgent({
           .filter((feed) => feed.latestFrame)
           .sort((a, b) => b.lastMotionAt - a.lastMotionAt)[0];
         if (fallback) activeFeeds = [fallback];
+        if (fallback && !presenceRoom) presenceRoom = fallback.room;
+      }
+
+      if (presenceRoom && presenceRoom !== publishedPresenceRoom) {
+        publishedPresenceRoom = presenceRoom;
+        ctx.room.localParticipant
+          ?.setAttributes({ activeRoom: presenceRoom })
+          .catch((error) => console.error("Failed to publish activeRoom:", error));
       }
 
       // The switchCamera tool lets the agent deliberately look somewhere

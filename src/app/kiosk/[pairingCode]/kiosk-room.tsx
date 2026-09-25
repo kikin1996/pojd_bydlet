@@ -25,7 +25,22 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
   // Safari/iPadOS), so this covers the viewport with a fixed overlay instead,
   // which behaves identically everywhere and is always reversible from the
   // same visible button.
-  const [avatarExpanded, setAvatarExpanded] = useState(false);
+  const [avatarExpandedState, setAvatarExpanded] = useState(false);
+  // Room the AI currently "is" in (published by the agent). The avatar shows
+  // and speaks only there; every other kiosk says the AI is elsewhere.
+  const [agentRoom, setAgentRoom] = useState<string | null>(null);
+  const avatarHere = !agentRoom || !room || agentRoom === room;
+  const avatarHereRef = useRef(true);
+  const avatarExpanded = avatarExpandedState && avatarHere;
+
+  useEffect(() => {
+    avatarHereRef.current = avatarHere;
+    audioContainerRef.current
+      ?.querySelectorAll("audio")
+      .forEach((el) => {
+        el.muted = !avatarHere;
+      });
+  }, [avatarHere]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +80,7 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
       room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _publication, participant) => {
         if (track.kind === Track.Kind.Audio && isAvatarParticipant(participant.identity)) {
           const element = track.attach();
+          element.muted = !avatarHereRef.current;
           audioContainerRef.current?.appendChild(element);
         } else if (
           track.kind === Track.Kind.Video &&
@@ -82,6 +98,16 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
           setAvatarConnected(false);
         }
       });
+
+      const readAgentRoom = (participant: { identity: string; attributes: Record<string, string> }) => {
+        if (participant.identity.startsWith("agent-") && participant.attributes.activeRoom) {
+          setAgentRoom(participant.attributes.activeRoom);
+        }
+      };
+      room.on(RoomEvent.ParticipantAttributesChanged, (_changed, participant) =>
+        readAgentRoom(participant),
+      );
+      room.on(RoomEvent.ParticipantConnected, (participant) => readAgentRoom(participant));
 
       room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
         setAudioBlocked(!room.canPlaybackAudio);
@@ -101,6 +127,7 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
 
       try {
         await room.connect(data.url, data.token);
+        room.remoteParticipants.forEach((participant) => readAgentRoom(participant));
         await room.localParticipant.setCameraEnabled(true);
         await room.localParticipant.setMicrophoneEnabled(true, {
           echoCancellation: true,
@@ -197,13 +224,19 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
             playsInline
             className={avatarExpanded ? "h-full w-full object-contain" : "h-full w-full object-cover"}
           />
-          {!avatarConnected && status === "connected" && (
+          {!avatarHere && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900 p-2 text-center text-xs text-gray-300">
+              AI makléř je právě v jiné místnosti: {agentRoom}
+            </div>
+          )}
+          {avatarHere && !avatarConnected && status === "connected" && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-center text-xs text-gray-400">
               Čekám na AI makléře...
             </div>
           )}
           <button
             type="button"
+            hidden={!avatarHere}
             onClick={() => setAvatarExpanded((prev) => !prev)}
             aria-label={avatarExpanded ? "Zmenšit avatara" : "Zvětšit avatara na celou obrazovku"}
             className={
