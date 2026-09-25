@@ -51,6 +51,9 @@ next-env.d.ts
 credentials.md
 agent-secrets.env
 
+# database backups — contain real user data, never commit
+/backups
+
 # Supabase CLI local cache/state
 /supabase/.temp
 

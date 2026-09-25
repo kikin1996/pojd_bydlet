@@ -56,20 +56,28 @@ export function KioskRoom({ pairingCode }: { pairingCode: string }) {
       setPropertyAddress(data.propertyAddress ?? null);
       setRoom(data.room ?? null);
 
-      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-        if (track.kind === Track.Kind.Audio) {
+      // Other kiosk devices (other rooms) and viewers publish video into the
+      // same LiveKit room, so "any remote video" is not the avatar — only
+      // participants that aren't a device/viewer are.
+      const isAvatarParticipant = (identity: string) =>
+        !identity.startsWith("device-") && !identity.startsWith("viewer-");
+
+      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _publication, participant) => {
+        if (track.kind === Track.Kind.Audio && isAvatarParticipant(participant.identity)) {
           const element = track.attach();
           audioContainerRef.current?.appendChild(element);
-        } else if (track.kind === Track.Kind.Video && avatarVideoRef.current) {
-          // The only remote video track a kiosk device ever receives is the
-          // AI's talking-avatar face (Tavus), published as its own participant.
+        } else if (
+          track.kind === Track.Kind.Video &&
+          isAvatarParticipant(participant.identity) &&
+          avatarVideoRef.current
+        ) {
           track.attach(avatarVideoRef.current);
           setAvatarConnected(true);
         }
       });
 
-      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
-        if (track.kind === Track.Kind.Video) {
+      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _publication, participant) => {
+        if (track.kind === Track.Kind.Video && isAvatarParticipant(participant.identity)) {
           track.detach();
           setAvatarConnected(false);
         }
